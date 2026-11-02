@@ -66,7 +66,7 @@ Explore the traditional BaZi compatibility concepts between two birth charts.
 
 <!--
 <p align="center">
-  <img src="assets/dashboard.png" width="90%" alt="BaZi Studio Dashboard">
+  <img src="assets\dashboard.png" width="90%" alt="BaZi Studio Dashboard">
 </p>
 -->
 
