@@ -1,0 +1,2 @@
+streamlit>=1.40
+git+https://github.com/Erfix404/bazi-engine.git
