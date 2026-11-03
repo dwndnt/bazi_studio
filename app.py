@@ -92,12 +92,12 @@ PAGE_CHART = "Chart BaZi"
 PAGE_COMPATIBILITY = "Uji Kecocokan Pasangan"
 PAGE_ABOUT = "Tentang"
 
-PROFILE_A_NAME = "Profil Anda"
-PROFILE_B_NAME = "Profil Pasangan"
+PROFILE_A_NAME = "Masukkan Nama Anda"
+PROFILE_B_NAME = "Masukkan Nama Pasangan"
 
 APP_NAME = "BAZI STUDIO"
 APP_OWNER = "Dewan Dinata"
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.5"
 
 DEFAULT_LOCATION = {
     "name": "Medan, Sumatera Utara, Indonesia",
