@@ -2206,9 +2206,7 @@ def main() -> None:
         st.subheader("✨ AI-Powered BaZi Interpretation")
 
         st.write(
-            "Jelajahi interpretasi chart BaZi menggunakan "
-            "Gemini AI berdasarkan Four Pillars, Five Elements, "
-            "Ten Gods, Hidden Stems dan Da Yun."
+            "Jelajahi interpretasi chart BaZi menggunakan Gemini AI "
         )
 
         chart = st.session_state.get("chart_a")
@@ -2401,12 +2399,6 @@ def main() -> None:
                 )
 
                 st.divider()
-
-                st.caption(
-                    f"Generated using {GEMINI_MODEL}. "
-                    "Interpretasi berdasarkan prinsip BaZi "
-                    "tradisional dan bukan prediksi ilmiah."
-                )
 
 
     # ========================================================
