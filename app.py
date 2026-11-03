@@ -1851,8 +1851,7 @@ def main() -> None:
         </div>
 
         <div class="bazi-subtitle">
-            Personal BaZi chart analysis, Five Elements, Ten Gods,
-            Hidden Stems, Da Yun, dan branch relationships.
+            Where Destiny Meets Insight!
         </div>
 
         <div class="bazi-owner">
@@ -1901,7 +1900,7 @@ def main() -> None:
         )
 
         gender_label = st.selectbox(
-            "Jenis kelamin untuk Da Yun",
+            "Jenis kelamin",
             [
                 "Laki-laki",
                 "Perempuan",
@@ -2091,11 +2090,6 @@ def main() -> None:
         st.write(
             "Koreksi bujur menggunakan 4 menit untuk setiap "
             "derajat selisih bujur dari meridian zona waktu."
-        )
-
-        st.caption(
-            "Perhatikan kemungkinan penerapan koreksi waktu yang sama lebih dari "
-            "satu kali. Koreksi ganda dapat memengaruhi hasil perhitungan empat pilar."
         )
 
     # ========================================================
@@ -2531,7 +2525,7 @@ def main() -> None:
                 )
 
                 b_gender_label = st.selectbox(
-                    "Jenis kelamin untuk Da Yun",
+                    "Jenis kelamin",
                     [
                         "Laki-laki",
                         "Perempuan",
@@ -2838,7 +2832,7 @@ teori BaZi.
         {escape(APP_NAME)} · v{APP_VERSION}<br>
         Created and developed by
         <strong>{escape(APP_OWNER)}</strong><br>
-        For educational and traditional-metaphysics exploration only.
+        @2026
     </div>
     """)
 
