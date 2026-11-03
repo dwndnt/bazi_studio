@@ -1,3 +1,3 @@
 streamlit==1.66.1
 geopy==2.5.0
-bazi-engine==1.0.0
+bazi-engine @ git+https://github.com/Erfix404/bazi-engine.git@main
