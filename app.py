@@ -1527,26 +1527,32 @@ def normalize_location_query(query: str) -> str:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def geocode_location(query: str) -> dict | None:
-    """Cache hasil koordinat sukses saja; kegagalan tidak di-cache."""
+    if not GEOPY_AVAILABLE:
+        st.error("Library geopy belum tersedia.")
+        return None
 
-    if not GEOPY_AVAILABLE or not query.strip():
+    if not query or not query.strip():
+        st.warning("Query lokasi kosong.")
         return None
 
     try:
-
         geolocator = Nominatim(
-            user_agent=f"bazi-studio/{APP_VERSION}"
+            user_agent="bazi-studio-dewan/1.4.5",
+            timeout=15,
         )
 
         result = geolocator.geocode(
-            query,
+            query.strip(),
             exactly_one=True,
             addressdetails=True,
-            timeout=10,
             country_codes="id",
+            language="id",
         )
 
         if result is None:
+            st.warning(
+                f"OpenStreetMap tidak menemukan lokasi: {query}"
+            )
             return None
 
         return {
@@ -1555,10 +1561,10 @@ def geocode_location(query: str) -> dict | None:
             "longitude": float(result.longitude),
         }
 
-    except (GeocoderTimedOut, GeocoderServiceError):
-        return None
-
-    except Exception:
+    except Exception as exc:
+        st.error(
+            f"Geocoding error ({type(exc).__name__}): {exc}"
+        )
         return None
 
 
