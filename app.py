@@ -7,6 +7,9 @@ import math
 
 import streamlit as st
 
+from geopy.extra.rate_limiter import RateLimiter
+from geopy.exc import GeocoderRateLimited
+
 import json
 import os
 
@@ -1525,23 +1528,34 @@ def normalize_location_query(query: str) -> str:
     return cleaned
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_resource
+def get_geocode_service():
+    geolocator = Nominatim(
+        user_agent="bazi-studio/1.4.5 (your-contact-email)",
+        timeout=15,
+    )
+
+    return RateLimiter(
+        geolocator.geocode,
+        min_delay_seconds=1.1,
+        max_retries=0,
+        swallow_exceptions=False,
+    )
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
 def geocode_location(query: str) -> dict | None:
     if not GEOPY_AVAILABLE:
         st.error("Library geopy belum tersedia.")
         return None
 
     if not query or not query.strip():
-        st.warning("Query lokasi kosong.")
         return None
 
     try:
-        geolocator = Nominatim(
-            user_agent="bazi-studio-dewan/1.4.5",
-            timeout=15,
-        )
+        geocode = get_geocode_service()
 
-        result = geolocator.geocode(
+        result = geocode(
             query.strip(),
             exactly_one=True,
             addressdetails=True,
@@ -1550,9 +1564,7 @@ def geocode_location(query: str) -> dict | None:
         )
 
         if result is None:
-            st.warning(
-                f"OpenStreetMap tidak menemukan lokasi: {query}"
-            )
+            st.warning(f"Lokasi tidak ditemukan: {query}")
             return None
 
         return {
@@ -1561,12 +1573,27 @@ def geocode_location(query: str) -> dict | None:
             "longitude": float(result.longitude),
         }
 
+    except GeocoderRateLimited as exc:
+        retry_after = getattr(exc, "retry_after", None)
+
+        if retry_after:
+            st.warning(
+                f"Layanan geocoding sedang membatasi permintaan. "
+                f"Coba kembali setelah {retry_after} detik."
+            )
+        else:
+            st.warning(
+                "Layanan geocoding sedang membatasi permintaan. "
+                "Silakan coba kembali beberapa saat lagi."
+            )
+
+        return None
+
     except Exception as exc:
         st.error(
             f"Geocoding error ({type(exc).__name__}): {exc}"
         )
         return None
-
 
 # ============================================================
 # RELASI CABANG DAN KOMPATIBILITAS HEURISTIK
@@ -2205,11 +2232,6 @@ def main() -> None:
                         "Lokasi berhasil ditemukan."
                     )
 
-                else:
-
-                    st.warning(
-                        "Lokasi tidak ditemukan atau layanan geocoding tidak tersedia."
-                    )
 
         selected_location = st.session_state["birth_location"]
 
