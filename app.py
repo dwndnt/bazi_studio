@@ -1843,7 +1843,7 @@ def main() -> None:
     st.html(f"""
     <div class="bazi-hero">
         <div class="bazi-eyebrow">
-            Traditional Chinese Metaphysics
+            Hi! Welcome to..
         </div>
 
         <div class="bazi-title">
@@ -2318,7 +2318,7 @@ def main() -> None:
             else:
 
                 st.caption(
-                    f"Model aktif: {GEMINI_MODEL}"
+                    f"{GEMINI_MODEL}"
                 )
 
             # ------------------------------------------------
