@@ -145,6 +145,11 @@ html, body, [class*="css"] {
     color: var(--bazi-text);
 }
 
+/* Hide heading anchor links */
+[data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
+
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg,#101a2b,#0b1220);
     border-right: 1px solid var(--bazi-border);
