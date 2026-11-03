@@ -2108,7 +2108,7 @@ def main() -> None:
 
         person_label = st.text_input(
             "Nama Anda",
-            value=PROFILE_A_NAME,
+            value="",
             placeholder="Masukkan nama Anda",
         )
 
