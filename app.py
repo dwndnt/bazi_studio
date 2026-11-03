@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
@@ -7,6 +6,23 @@ from typing import Any
 import math
 
 import streamlit as st
+
+import json
+import os
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+
+    GEMINI_AVAILABLE = True
+    GEMINI_ERROR = None
+
+except ImportError as exc:
+    genai = None
+    genai_types = None
+
+    GEMINI_AVAILABLE = False
+    GEMINI_ERROR = exc
 
 try:
     from geopy.geocoders import Nominatim
@@ -35,6 +51,42 @@ except Exception as exc:
 # ============================================================
 # KONFIGURASI APLIKASI
 # ============================================================
+
+PAGE_AI_INSIGHTS = "AI Insights"
+
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+AI_CATEGORIES = {
+    "Personality & Character": {
+        "icon": "🧠",
+        "description": "Analisis kepribadian, karakter, pola berpikir, dan potensi diri.",
+    },
+
+    "Finance & Wealth": {
+        "icon": "💰",
+        "description": "Analisis simbolisme kekayaan, pengelolaan finansial, dan peluang.",
+    },
+
+    "Business & Entrepreneurship": {
+        "icon": "🏢",
+        "description": "Analisis kecenderungan bisnis, kepemimpinan, dan kewirausahaan.",
+    },
+
+    "Health & Well-being": {
+        "icon": "🌿",
+        "description": "Refleksi keseimbangan Five Elements dan kesejahteraan.",
+    },
+
+    "Love & Relationship": {
+        "icon": "❤️",
+        "description": "Analisis hubungan, komunikasi, dan simbolisme pasangan.",
+    },
+
+    "Career & Professional Development": {
+        "icon": "🚀",
+        "description": "Analisis potensi karier, profesionalisme, dan perkembangan pekerjaan.",
+    },
+}
 
 PAGE_CHART = "Chart BaZi"
 PAGE_COMPATIBILITY = "Uji Kecocokan Pasangan"
@@ -870,6 +922,359 @@ def safe_chart(
 
 
 # ============================================================
+# GEMINI AI INTERPRETATION ENGINE
+# ============================================================
+
+def get_gemini_api_key() -> str:
+    """
+    Mengambil API Key dari Streamlit Secrets.
+    Environment variable menjadi fallback untuk pengembangan lokal.
+    """
+
+    api_key = ""
+
+    try:
+        api_key = st.secrets.get(
+            "GEMINI_API_KEY",
+            ""
+        )
+    except Exception:
+        pass
+
+    if not api_key:
+        api_key = os.getenv(
+            "GEMINI_API_KEY",
+            ""
+        )
+
+    return str(api_key).strip()
+
+
+def json_safe(value: Any, depth: int = 0) -> Any:
+    """
+    Mengubah objek Python menjadi struktur JSON-safe.
+    """
+
+    if depth > 12:
+        return str(value)
+
+    if value is None:
+        return None
+
+    if isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+
+    if isinstance(value, dict):
+        return {
+            str(key): json_safe(val, depth + 1)
+            for key, val in value.items()
+        }
+
+    if isinstance(value, (list, tuple, set)):
+        return [
+            json_safe(item, depth + 1)
+            for item in value
+        ]
+
+    if hasattr(value, "model_dump"):
+        try:
+            return json_safe(
+                value.model_dump(),
+                depth + 1
+            )
+        except Exception:
+            pass
+
+    if hasattr(value, "__dict__"):
+        try:
+            return json_safe(
+                vars(value),
+                depth + 1
+            )
+        except Exception:
+            pass
+
+    return str(value)
+
+
+def build_ai_chart_context(chart: Any) -> dict:
+    """
+    Menyusun data chart menjadi konteks interpretasi AI.
+
+    Data perhitungan tetap berasal dari bazi-engine.
+    Gemini hanya melakukan interpretasi.
+    """
+
+    analysis = ElementEngine().analyze(chart)
+
+    engine_data = json_safe(chart)
+
+    # Tidak perlu mengirim tanggal dan jam lahir mentah
+    # kepada Gemini. Komponen chart sudah cukup untuk interpretasi.
+    if isinstance(engine_data, dict):
+
+        metadata = engine_data.get("meta")
+
+        if isinstance(metadata, dict):
+            metadata.pop("birth", None)
+
+    context = {
+        "engine_output": engine_data,
+
+        "normalized_pillars": analysis["details"],
+
+        "day_master": analysis["day_stem"],
+
+        "element_distribution_application": analysis["counts"],
+
+        "branch_relationships": branch_relationships(
+            analysis["pillars"]
+        ),
+
+        "interpretation_scope": (
+            "Traditional BaZi interpretation. "
+            "Use the supplied chart data only."
+        ),
+    }
+
+    return context
+
+
+GEMINI_SYSTEM_INSTRUCTION = """
+You are an expert interpreter of traditional Chinese BaZi
+(Four Pillars of Destiny) metaphysics.
+
+Your role is to explain an already calculated BaZi chart.
+
+IMPORTANT RULES:
+
+1. The supplied BaZi calculation is the source of truth.
+2. Never recalculate or modify the Four Pillars.
+3. Never invent missing chart information.
+4. Do not assume a Day Master is strong or weak without
+   referring to the supplied strength analysis.
+5. Use the supplied Ten Gods, Hidden Stems, Five Elements,
+   favourable elements, Da Yun and annual pillars when available.
+6. Clearly distinguish actual chart data from traditional
+   symbolic interpretations.
+7. Explain the reasoning behind every major conclusion.
+8. Avoid deterministic predictions.
+9. Never promise wealth, marriage, business success,
+   career success or other future outcomes.
+10. Write in natural, accessible Indonesian.
+11. Use clear headings, paragraphs and bullet points.
+12. Be analytical, balanced, specific and educational.
+
+HEALTH SAFETY:
+
+For health-related interpretations, only discuss traditional
+Five Elements symbolism and general well-being reflections.
+
+Never diagnose diseases, predict illnesses, identify medical
+conditions, prescribe treatment or recommend medication.
+
+Explain that BaZi is not a medical assessment.
+
+OUTPUT STYLE:
+
+- Start with a concise overview.
+- Explain the relevant chart indicators.
+- Discuss strengths and potential challenges.
+- Provide practical reflection points.
+- End with limitations of traditional interpretation.
+
+Avoid generic descriptions that could apply to every person.
+Ground your explanation in the actual supplied chart.
+"""
+
+
+AI_CATEGORY_INSTRUCTIONS = {
+
+    "Personality & Character": """
+Analyze personality and character.
+
+Focus on:
+- Day Master characteristics.
+- Day Master strength and seasonal context.
+- Heavenly Stems and Earthly Branches.
+- Hidden Stems and Ten Gods.
+- Five Elements balance.
+- Natural strengths and potential challenges.
+- Thinking and decision-making tendencies.
+- Personal development opportunities.
+
+Do not describe the Day Master in isolation.
+Connect multiple chart indicators.
+""",
+
+    "Finance & Wealth": """
+Analyze traditional BaZi wealth symbolism.
+
+Focus on:
+- Direct Wealth and Indirect Wealth stars.
+- Wealth element relationship to Day Master.
+- Day Master strength and ability to manage wealth symbolism.
+- Supporting and controlling elements.
+- Ten Gods relationships.
+- Relevant Da Yun and annual pillars, if available.
+- Financial discipline and risk-management reflections.
+
+Do not predict actual income, investment returns,
+financial success or guaranteed wealth.
+""",
+
+    "Business & Entrepreneurship": """
+Analyze business and entrepreneurship tendencies.
+
+Focus on:
+- Output stars and their relationship with Wealth stars.
+- Resource and Officer stars.
+- Day Master strength.
+- Leadership and decision-making symbolism.
+- Collaboration versus independent work tendencies.
+- Business-related strengths and potential challenges.
+- Relevant Da Yun cycles, if available.
+
+Suggest possible working styles and business environments.
+Do not claim that a specific business will certainly succeed.
+""",
+
+    "Health & Well-being": """
+Analyze traditional Five Elements symbolism related to
+balance and general well-being.
+
+Focus on:
+- Distribution of the Five Elements.
+- Dominant and relatively weak elements.
+- Traditional symbolic relationships.
+- General lifestyle reflection.
+
+STRICTLY DO NOT:
+- Diagnose or predict diseases.
+- Predict medical conditions.
+- Recommend medicines or treatment.
+- Claim that an element imbalance proves an organ problem.
+
+Make it clear that this is cultural and metaphysical
+reflection, not medical advice.
+""",
+
+    "Love & Relationship": """
+Analyze traditional BaZi relationship symbolism.
+
+Focus on:
+- Day Branch and spouse palace symbolism.
+- Relevant Ten Gods.
+- Relationship stars, where supported by the supplied chart.
+- Interactions between Heavenly Stems and Earthly Branches.
+- Communication and emotional tendencies.
+- Potential relationship strengths and challenges.
+- Relevant Da Yun and annual pillars, if available.
+
+Use respectful and gender-neutral language.
+Do not predict marriage dates, divorce or relationship outcomes.
+""",
+
+    "Career & Professional Development": """
+Analyze career and professional development tendencies.
+
+Focus on:
+- Direct Officer and Seven Killings.
+- Direct Resource and Indirect Resource.
+- Eating God and Hurting Officer.
+- Wealth stars.
+- Day Master strength.
+- Leadership, expertise and working environment.
+- Potential professional strengths and challenges.
+- Relevant Da Yun and annual pillars, if available.
+
+Discuss suitable professional environments and working styles.
+Do not guarantee promotions, job offers or career success.
+""",
+}
+
+
+def generate_bazi_interpretation(
+    chart: Any,
+    category: str,
+) -> str:
+    """
+    Generate one category of BaZi interpretation using Gemini.
+    """
+
+    if not GEMINI_AVAILABLE:
+        raise RuntimeError(
+            "Package google-genai belum tersedia."
+        )
+
+    api_key = get_gemini_api_key()
+
+    if not api_key:
+        raise RuntimeError(
+            "Gemini API Key belum dikonfigurasi."
+        )
+
+    if category not in AI_CATEGORY_INSTRUCTIONS:
+        raise ValueError(
+            "Kategori interpretasi tidak valid."
+        )
+
+    chart_context = build_ai_chart_context(chart)
+
+    chart_json = json.dumps(
+        chart_context,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    prompt = f"""
+Lakukan interpretasi BaZi untuk kategori:
+
+{category}
+
+INSTRUKSI KHUSUS KATEGORI:
+{AI_CATEGORY_INSTRUCTIONS[category]}
+
+DATA HASIL PERHITUNGAN BAZI:
+
+{chart_json}
+
+Berdasarkan data tersebut, buat analisis yang mendalam,
+terstruktur, spesifik dan mudah dipahami.
+
+Gunakan bahasa Indonesia.
+
+Jangan mengarang informasi yang tidak tersedia
+dalam data perhitungan.
+"""
+
+    client = genai.Client(
+        api_key=api_key
+    )
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=genai_types.GenerateContentConfig(
+            system_instruction=GEMINI_SYSTEM_INSTRUCTION,
+            temperature=0.65,
+            max_output_tokens=3000,
+        ),
+    )
+
+    result = response.text
+
+    if not result or not result.strip():
+        raise RuntimeError(
+            "Gemini tidak menghasilkan interpretasi."
+        )
+
+    return result.strip()
+
+# ============================================================
 # GEOCODING
 # ============================================================
 
@@ -1406,7 +1811,10 @@ def main() -> None:
         "b_location_query",
         "Medan"
     )
-
+    st.session_state.setdefault(
+        "ai_insights",
+        {}
+)
     # Menjaga halaman aktif dan hasil analisis selama session.
     st.session_state.setdefault(
         "active_page",
@@ -1728,6 +2136,8 @@ def main() -> None:
             st.session_state["compatibility_chart_b"] = None
             st.session_state["compatibility_report"] = None
             st.session_state["compatibility_meta_b"] = None
+            # Chart baru berarti hasil interpretasi AI sebelumnya tidak valid.
+            st.session_state["ai_insights"] = {}
 
             st.session_state["active_page"] = PAGE_CHART
 
@@ -1751,6 +2161,7 @@ def main() -> None:
         [
             PAGE_CHART,
             PAGE_COMPATIBILITY,
+            PAGE_AI_INSIGHTS,
             PAGE_ABOUT,
         ],
         key="active_page",
@@ -1789,6 +2200,220 @@ def main() -> None:
                 st.session_state["chart_a"],
                 st.session_state["chart_a_label"],
             )
+
+
+
+    # ========================================================
+    # HALAMAN AI INSIGHTS
+    # ========================================================
+
+    elif active_page == PAGE_AI_INSIGHTS:
+
+        st.subheader("✨ AI-Powered BaZi Interpretation")
+
+        st.write(
+            "Jelajahi interpretasi chart BaZi menggunakan "
+            "Gemini AI berdasarkan Four Pillars, Five Elements, "
+            "Ten Gods, Hidden Stems dan Da Yun."
+        )
+
+        chart = st.session_state.get("chart_a")
+
+        if chart is None:
+
+            st.warning(
+                "Hitung chart Profil Anda terlebih dahulu "
+                "dari halaman Chart BaZi."
+            )
+
+        else:
+
+            # ------------------------------------------------
+            # INFORMASI DAY MASTER
+            # ------------------------------------------------
+
+            analysis = ElementEngine().analyze(chart)
+
+            day_stem = analysis["day_stem"]
+
+            if day_stem:
+
+                element, polarity = STEM_INFO[day_stem]
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Day Master",
+                    day_stem,
+                )
+
+                c2.metric(
+                    "Elemen",
+                    element,
+                )
+
+                c3.metric(
+                    "Polaritas",
+                    polarity,
+                )
+
+            st.divider()
+
+            # ------------------------------------------------
+            # PILIH KATEGORI
+            # ------------------------------------------------
+
+            st.markdown("### Pilih Analisis")
+
+            selected_category = st.selectbox(
+                "Kategori interpretasi",
+                options=list(AI_CATEGORIES.keys()),
+                format_func=lambda x: (
+                    f'{AI_CATEGORIES[x]["icon"]} {x}'
+                ),
+                key="ai_selected_category",
+            )
+
+            st.caption(
+                AI_CATEGORIES[selected_category]["description"]
+            )
+
+            st.info(
+                "Gemini akan menerima data hasil perhitungan "
+                "chart BaZi untuk menghasilkan interpretasi. "
+                "Nama, tanggal lahir mentah, dan koordinat lokasi "
+                "tidak dimasukkan dalam payload interpretasi."
+            )
+
+            # ------------------------------------------------
+            # PERSETUJUAN PENGIRIMAN DATA
+            # ------------------------------------------------
+
+            ai_consent = st.checkbox(
+                "Saya memahami bahwa data hasil perhitungan BaZi "
+                "akan dikirim ke Google Gemini API untuk dianalisis.",
+                key="ai_consent",
+            )
+
+            # ------------------------------------------------
+            # CEK KONFIGURASI
+            # ------------------------------------------------
+
+            if not GEMINI_AVAILABLE:
+
+                st.error(
+                    "Library Google Gen AI belum tersedia. "
+                    "Pastikan google-genai sudah tercantum "
+                    "di requirements.txt."
+                )
+
+            elif not get_gemini_api_key():
+
+                st.warning(
+                    "Gemini API Key belum dikonfigurasi. "
+                    "Silakan atur GEMINI_API_KEY melalui "
+                    "Streamlit Secrets."
+                )
+
+            else:
+
+                st.caption(
+                    f"Model aktif: {GEMINI_MODEL}"
+                )
+
+            # ------------------------------------------------
+            # GENERATE INTERPRETATION
+            # ------------------------------------------------
+
+            if st.button(
+                "✨ Generate AI Interpretation",
+                type="primary",
+                use_container_width=True,
+                disabled=(
+                    not GEMINI_AVAILABLE
+                    or not get_gemini_api_key()
+                ),
+                key="generate_ai_interpretation",
+            ):
+
+                if not ai_consent:
+
+                    st.warning(
+                        "Silakan berikan persetujuan "
+                        "sebelum mengirim data ke Gemini."
+                    )
+
+                else:
+
+                    try:
+
+                        with st.spinner(
+                            "Gemini sedang menganalisis chart BaZi..."
+                        ):
+
+                            result = generate_bazi_interpretation(
+                                chart,
+                                selected_category,
+                            )
+
+                        st.session_state.setdefault(
+                            "ai_insights",
+                            {}
+                        )
+
+                        st.session_state["ai_insights"][
+                            selected_category
+                        ] = result
+
+                        st.success(
+                            "Interpretasi AI berhasil dibuat."
+                        )
+
+                    except Exception as exc:
+
+                        st.error(
+                            "Gagal menghasilkan interpretasi AI."
+                        )
+
+                        st.caption(
+                            f"Jenis error: {type(exc).__name__}"
+                        )
+
+                        st.info(
+                            "Periksa API Key, kuota Gemini, "
+                            "koneksi internet, dan konfigurasi model."
+                        )
+
+            # ------------------------------------------------
+            # TAMPILKAN HASIL
+            # ------------------------------------------------
+
+            saved_insights = st.session_state.get(
+                "ai_insights",
+                {}
+            )
+
+            if selected_category in saved_insights:
+
+                st.divider()
+
+                st.markdown(
+                    f"## {AI_CATEGORIES[selected_category]['icon']} "
+                    f"{selected_category}"
+                )
+
+                st.markdown(
+                    saved_insights[selected_category]
+                )
+
+                st.divider()
+
+                st.caption(
+                    f"Generated using {GEMINI_MODEL}. "
+                    "Interpretasi berdasarkan prinsip BaZi "
+                    "tradisional dan bukan prediksi ilmiah."
+                )
+
 
     # ========================================================
     # HALAMAN UJI KECOCOKAN PASANGAN
